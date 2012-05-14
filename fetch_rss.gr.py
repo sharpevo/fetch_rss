@@ -107,8 +107,8 @@ def main():
     # file_name = "2012-05-08_11-28(182)"
     # file_folder = "/home/ryan/local/scripts/rss/output/2012-05-08_11-28(182)"
     # file_path = "/home/ryan/local/scripts/rss/output/2012-05-08_11-28(182).html"
-    base_folder = "/home/ryan/local/scripts/rss/output"
-    timestamp = time.strftime("%Y_%m_%d-%H_%M")
+    base_folder = "/home/ryan/local/scripts/kindle/fetch_rss/output"
+    timestamp = time.strftime("%Y.%m.%d %H:%M")
 
 
     # fetch article
@@ -141,8 +141,8 @@ def main():
     gr.mark_all_as_read()
 
     texts = [(file_name, (150, 100)), (timestamp, (220, 650))]
-    cover_path = "/home/ryan/local/scripts/rss/output/cover_temp.jpg"
-    cover_output = "/home/ryan/local/scripts/rss/output/cover.jpg"
+    cover_path = "/home/ryan/local/scripts/kindle/fetch_rss/output/cover_temp.jpg"
+    cover_output = "/home/ryan/local/scripts/kindle/fetch_rss/output/cover.jpg"
     image_util.add_texts_to_image(texts, cover_path, cover_output)
     convert_to_mobi_by_kindlegen(file_path, file_folder)
 
