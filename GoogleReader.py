@@ -14,14 +14,9 @@ Functions based on Google Reader API.
 
 """
 import time, base64
-
 import urllib, urllib2
 from BeautifulSoup import BeautifulSoup as BS
 import lxml.html
-
-# import sys
-# sys.path.append("/home/ryan/local/scripts/python")
-# from progress_bar import progress_bar
 
 AUTH_URL = 'https://www.google.com/accounts/ClientLogin'
 google_url = 'http://www.google.com'
@@ -35,9 +30,7 @@ starred_url = reader_url + '/atom/user/-/state/com.google/starred'
 subscription_url = reader_url + '/api/0/subscription/edit'
 get_feed_url = reader_url + '/atom/feed/'
 
-
 class GoogleReader():
-
 
     def __init__(self,
                  username, password,
@@ -84,7 +77,7 @@ class GoogleReader():
             resp = urllib2.urlopen(req)
             return resp.read()
         except: # URLError
-            print "::Error while getting response from", url
+            print "Error while getting response from", url
         return None
 
     def parse_feeds(self, feed_list_url):
@@ -95,12 +88,10 @@ class GoogleReader():
         html = lxml.html.fromstring(resp)
         feeds = html.xpath("//outline[@type='rss']")
         feed_url_list = [self.parse_feed(feed) for feed in feeds if self.has_unread(feed.get("xmlurl"))]
-        # feed_url_list = [self.parse_feed(count,len(feeds),feed) for count,feed in enumerate(feeds) if self.has_unread(feed.get("xmlurl"))]
         print "    %s/%s unread feeds" % (len(feed_url_list), len(feeds))
         return feed_url_list
 
     def parse_feed(self, feed):
-    # def parse_feed(self, count, total, feed):
 
         feed_title = feed.get("text")
         feed_xml_url = feed.get("xmlurl")
@@ -111,14 +102,12 @@ class GoogleReader():
                                     "atom",
                                     feed_quote_url,
                                     unread_param)
-        # progress_bar.show_progress_bar(count, total, feed_xml_url)
         return (feed_title, feed_url, feed_xml_url)
 
     def has_unread(self, feed_xml_url):
         unread_url = "http://www.google.com/reader/api/0/unread-count?all=true"
         html = lxml.html.fromstring(self.get_resp(unread_url))
         unread_feed_list = html.xpath("//string")
-        # print "    check", feed_xml_url
         for feed in unread_feed_list:
             if feed_xml_url in feed.text:
                 return True
@@ -137,17 +126,12 @@ class GoogleReader():
     def fetch_article(self, feed_title, feed_html_url, feed_xml_url):
         soup = BS(self.get_resp(feed_html_url),
                   convertEntities="html")
-        # titles = soup.findAll("title", attrs={"type":"html"})
-        # article_titles = [title for title in titles if feed_title not in title]
-        # article_titles = [title for title in titles if feed_title not in title]
-        # contents = soup.findAll("summary") or soup.findAll("content")
 
         entries = soup.findAll("entry")
 
         article_sum = len(entries)
         self.article_sum += article_sum
         print "    Fetch %s articles from %s" % (article_sum, feed_title)
-        # article_list = [(article_titles[i], contents[i]) for i in range(article_sum)]
         article_list = [(entries[i].title, entries[i].content or entries[i].summary) for i in range(article_sum)]
         self.list_to_mark.append(feed_xml_url)
         return (feed_title, article_list)
