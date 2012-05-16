@@ -4,6 +4,14 @@
 - private method and attributes should contain two leadding underscores.
 - ?init all the instance attributes in the __init__ body like self.xxx = xxx
 
+Question:
+fetch_rss: if mark > output, safe for comming item, not for current.
+           if output > mark, safe for current data, not for future.
+now it focus on current data.
+But not occur.
+There is a new item comming after I fetch article, then a long time to fetch
+images, and mark as read. In the end, the new item is still unread, why?
+
 '''
 import sys
 reload(sys)
@@ -21,23 +29,37 @@ import internet_util, image_util
 from GoogleReader import GoogleReader
 def main():
 
+    print "\n***** Fetch Rss from Google Reader *****\n"
+
     base_folder = "/home/ryan/local/scripts/kindle/fetch_rss/output"
     timestamp = time.strftime("%Y.%m.%d %H:%M")
 
     # fetch article
     feed_list_url = ("https://www.google.com/reader"
-                     "/public/subscriptions/user/-/label/Featured")
+                     "/public/subscriptions/user/-/label/Fun")
     username = base64.b64decode("c2Vhc2lkZXJ5YW5AZ21haWwuY29t")
     password = base64.b64decode("eW91cG9taWFu")
     gr = GoogleReader(username=username, password=password)
-    feed_content_list = gr.fetch_articles()
-    if not feed_content_list:
-        print "No new items."
+    # gr = GoogleReader(username=username, password=password,feed_list_url=feed_list_url)
+
+    print "> Counting Articles..."
+
+    article_amount = gr.get_amount()
+    if not article_amount:
+        output_rst("> No new items.")
         return
 
-    # make html
-    article_sum = gr.get_sum()
-    file_name = "Featured Articles (%s)" % article_sum
+    input_char = ""
+    while input_char.lower() not in ["y", "n"]:
+        input_char = raw_input("    Fetch all %s articles? (y or n)" % article_amount)
+        if input_char == "y":
+            break
+        elif input_char == "n":
+            output_rst("> Abort to fetching articles.")
+            return
+
+    feed_content_list = gr.fetch_articles()
+    file_name = "Featured Articles (%s)" % article_amount
     file_folder = os.path.join(base_folder, file_name)
     # create a folder to storage images.
     try:
@@ -46,7 +68,7 @@ def main():
         pass
 
     # trans article_sum to mark the progress with left count
-    html, outline = gen_html(feed_content_list, article_sum)
+    html, outline = gen_html(feed_content_list, article_amount)
     make_nav_aid(file_folder, outline)
     html_with_images = internet_util.fetch_images(html, file_folder, timeout=5.0)
 
@@ -61,10 +83,15 @@ def main():
     cover_abs_path = "%s/cover.jpg" % base_folder
     image_util.add_texts_to_image(texts, covertmp_abs_path, cover_abs_path)
 
+    print "> Convert to mobi..."
+
     opf_file = "%s.opf" % file_folder
     Popen(("kindlegen", opf_file), stdout=PIPE, stderr=PIPE)
 
-    print "Finished!"
+    output_rst("Finished!")
+
+def output_rst(text):
+    print "****************************************\n%s" % text
 
 #######################################################################################
 # opf file template.
@@ -206,7 +233,10 @@ def output(file_path, strings):
 
 HTML = '''
 <html>
-  <head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"></head>
+  <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+      <link rel="stylesheet" href="content.css" type="text/css"/>
+  </head>
   <body>
     %(cover)s
     %(toc)s
@@ -217,8 +247,7 @@ HTML = '''
 '''
 COVER = '''
 <div id="cover">
-  <h1 id="title">Google Reader Featured Articles</h1>
-  <img src="cover.jpg"/>
+  <h1 id="title">Google Reader Featured Articles<img src="cover.jpg" width=0 height=0/></h1>
 </div>
 '''
 CONTENT = '''
@@ -275,9 +304,9 @@ TOC_ART = '''
 </li>
 '''
 
-def gen_html(feed_content_list, article_sum):
+def gen_html(feed_content_list, article_amount):
 
-    contents, outline = make_contents(feed_content_list, article_sum)
+    contents, outline = make_contents(feed_content_list, article_amount)
     toc = make_toc(outline)
     html = make_html(COVER, toc, contents)
     return (html, outline)
@@ -289,7 +318,7 @@ def make_html(cover, toc, contents):
                        contents=contents)
     return html
 
-def make_contents(feed_content_list, article_sum):
+def make_contents(feed_content_list, article_amount):
     toc = ""
     contents = ""
     cover = ""
@@ -306,9 +335,8 @@ def make_contents(feed_content_list, article_sum):
         feed_article_titles = []
         for art_title, art_desc in feed_article_list:
             article_count += 1
-            cur_art_count += article_count
-            left = article_sum - cur_art_count
-            title = "%s (%s+)" % (art_title.string, left)
+            left = article_amount - cur_art_count - article_count
+            title = "%s&lt; %s" % (left, art_title.string)
             if art_desc:
                 content = "".join(art_desc)
             else:
@@ -319,6 +347,7 @@ def make_contents(feed_content_list, article_sum):
                                                 title=title,
                                                 contents=content))
             feed_article_titles.append(title)
+        cur_art_count += article_count
         sections.append(SECTION % dict(count=feed_count,
                                             articles="".join(articles)))
         outline.append((feed_title,feed_article_titles))
@@ -352,7 +381,5 @@ def make_toc(outline):
     return toc
 
 if __name__ == "__main__":
-    try:
-        main()
-    except:
-        print "Error Occured!"
+    main()
+

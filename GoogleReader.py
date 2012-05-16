@@ -19,6 +19,7 @@ from BeautifulSoup import BeautifulSoup as BS
 import lxml.html
 
 AUTH_URL = 'https://www.google.com/accounts/ClientLogin'
+UNREAD_URL = "http://www.google.com/reader/api/0/unread-count?all=true"
 google_url = 'http://www.google.com'
 reader_url = google_url + '/reader'
 token_url = reader_url + '/api/0/token'
@@ -37,16 +38,28 @@ class GoogleReader():
                  feed_list_url=("https://www.google.com/reader"
                                 "/public/subscriptions/user/-/label/Featured")):
         self.list_to_mark = []
-        self.article_sum = 0
         self._authorize(username, password)
-        self.feed_url_list = self.parse_feeds(feed_list_url)
+        self.feed_list_url = feed_list_url
+        self.unread_html = None
 
-    def get_sum(self):
-        return self.article_sum
+    def unread_parser(self):
+        if self.unread_html == None:
+            resp = self.get_resp(UNREAD_URL)
+            self.unread_html = lxml.html.fromstring(resp)
+        return self.unread_html
 
+    def get_amount(self):
+        feeds = self.unread_parser().xpath("//object")
+        label_string = "/".join(self.feed_list_url.split("/")[-2:])
+        for feed in feeds:
+            feed_string = feed.find("string")
+            if feed_string is not None:
+                if label_string in feed_string.text:
+                    return int(feed.find("number").text)
+        return 0
     def _authorize(self, username, password):
 
-        print "> Waiting for GR auth..."
+        print "> Waiting for GR Auth..."
 
         auth_req_data = urllib.urlencode({"Email": username,
                                           "Passwd": password,
@@ -105,9 +118,7 @@ class GoogleReader():
         return (feed_title, feed_url, feed_xml_url)
 
     def has_unread(self, feed_xml_url):
-        unread_url = "http://www.google.com/reader/api/0/unread-count?all=true"
-        html = lxml.html.fromstring(self.get_resp(unread_url))
-        unread_feed_list = html.xpath("//string")
+        unread_feed_list = self.unread_parser().xpath("//string")
         for feed in unread_feed_list:
             if feed_xml_url in feed.text:
                 return True
@@ -118,8 +129,8 @@ class GoogleReader():
         Articles may be ill formed html, such us contain "<>"
         Use BS
         """
+        self.feed_url_list = self.parse_feeds(self.feed_list_url)
         print "> Fetching Articles..."
-
         feed_content_list = [self.fetch_article(tit, html, xml) for tit, html, xml in self.feed_url_list]
         return feed_content_list
 
@@ -130,8 +141,7 @@ class GoogleReader():
         entries = soup.findAll("entry")
 
         article_sum = len(entries)
-        self.article_sum += article_sum
-        print "    Fetch %s articles from %s" % (article_sum, feed_title)
+        print "    Fetch %2d articles from %s" % (article_sum, feed_title)
         article_list = [(entries[i].title, entries[i].content or entries[i].summary) for i in range(article_sum)]
         self.list_to_mark.append(feed_xml_url)
         return (feed_title, article_list)
