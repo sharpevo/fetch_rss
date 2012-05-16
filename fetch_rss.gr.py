@@ -259,14 +259,14 @@ SECTION = '''
 <div id="section_%(count)s" class="section">
     %(articles)s
 </div>
-<mbp:pagebreak></mbp:pagebreak>
+<mbp:pagebreak/>
 '''
 ARTICLE = '''
 <div id="article_%(sec_count)s_%(art_count)s" class="article">
     <h2 class="article_title">%(title)s</h2>
     <div class="article_content">%(contents)s</div>
 </div>
-<mbp:pagebreak></mbp:pagebreak>
+<mbp:pagebreak/>
 '''
 
 # table of contents
@@ -277,10 +277,10 @@ TOC = '''
         <ol>
             %(toc_feeds)s
        </ol>
-    <mbp:pagebreak></mbp:pagebreak>
+    <mbp:pagebreak/>
     %(toc_secs)s
 </div>
-<mbp:pagebreak></mbp:pagebreak>
+<mbp:pagebreak/>
 '''
 
 TOC_FEED = '''
@@ -296,7 +296,7 @@ TOC_SEC = '''
         %(articles)s
     </ol>
 </div>
-<mbp:pagebreak></mbp:pagebreak>
+<mbp:pagebreak/>
 '''
 TOC_ART = '''
 <li>
