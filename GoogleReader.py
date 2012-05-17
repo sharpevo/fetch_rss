@@ -31,33 +31,51 @@ starred_url = reader_url + '/atom/user/-/state/com.google/starred'
 subscription_url = reader_url + '/api/0/subscription/edit'
 get_feed_url = reader_url + '/atom/feed/'
 
+class Feed():
+
+    def __init__(self, title="", html_url="", xml_url="", articles=[] ):
+        self.title = title
+        self.html_url = html_url
+        self.xml_url = xml_url
+        self.articles = articles
+
+class Article():
+
+    def __init__(self, title="", desc=""):
+        self.title = title
+        self.desc = desc
+
 class GoogleReader():
 
     def __init__(self,
                  username, password,
                  feed_list_url=("https://www.google.com/reader"
                                 "/public/subscriptions/user/-/label/Featured")):
-        self.list_to_mark = []
-        self._authorize(username, password)
+        self.header = self.authorize(username, password)
         self.feed_list_url = feed_list_url
-        self.unread_html = None
+        self.unread_objects = self.gen_unread_objects()
 
-    def unread_parser(self):
-        if self.unread_html == None:
-            resp = self.get_resp(UNREAD_URL)
-            self.unread_html = lxml.html.fromstring(resp)
-        return self.unread_html
+    def gen_unread_objects(self):
+        '''
+        unread xml structure:
+            <object>
+            <string name="id">feed/http://feed.feedsky.com/iheima</string>
+            <number name="count">21</number>
+            <number name="newestItemTimestampUsec">1337221206164209</number></object>
+        '''
+        resp = self.get_resp(UNREAD_URL)
+        html = lxml.html.fromstring(resp)
+        unread_objects = html.xpath("//object")[1:] # remove root obj
+        return unread_objects
 
     def get_amount(self):
-        feeds = self.unread_parser().xpath("//object")
         label_string = "/".join(self.feed_list_url.split("/")[-2:])
-        for feed in feeds:
-            feed_string = feed.find("string")
-            if feed_string is not None:
-                if label_string in feed_string.text:
-                    return int(feed.find("number").text)
+        for unread_object in self.unread_objects:
+            if label_string in unread_object.find("string").text:
+                return int(unread_object.find("number").text)
         return 0
-    def _authorize(self, username, password):
+
+    def authorize(self, username, password):
 
         print "> Waiting for GR Auth..."
 
@@ -78,7 +96,8 @@ class GoogleReader():
         auth_resp_dict = dict(x.split("=") for x in auth_resp.split("\n") if x)
 
         AUTH = auth_resp_dict["Auth"]
-        self.header = {"Authorization": "GoogleLogin auth=%s" % AUTH}
+        header = {"Authorization": "GoogleLogin auth=%s" % AUTH}
+        return header
 
     def get_resp(self, url, data=""):
         if data:
@@ -93,64 +112,70 @@ class GoogleReader():
             print "Error while getting response from", url
         return None
 
-    def parse_feeds(self, feed_list_url):
+    def parsing_feeds(self, feed_list_url):
+        '''
+        outline structure:
+            <outline
+            text="@iheima"
+            title="@iheima"
+            type="rss"
+            xmlUrl="http://feed.feedsky.com/iheima"
+            htmlUrl="http://www.google.com/reader/view/"
+                    "feed%2Fhttp%3A%2F%2Ffeed.feedsky.com%2Fiheima"/>
+
+        '''
 
         print "> Parsing Feeds..."
 
         resp = self.get_resp(feed_list_url)
         html = lxml.html.fromstring(resp)
-        feeds = html.xpath("//outline[@type='rss']")
-        feed_url_list = [self.parse_feed(feed) for feed in feeds if self.has_unread(feed.get("xmlurl"))]
-        print "    %s/%s unread feeds" % (len(feed_url_list), len(feeds))
-        return feed_url_list
+        all_feeds_obj = html.xpath("//outline[@type='rss']")
+        unread_xml_urls = [obj.find("string").text for obj in self.unread_objects]
+        unread_feeds = [self.parse_feed(feed_obj)
+                        for feed_obj in all_feeds_obj
+                        if ("feed/%s" % feed_obj.get("xmlurl")) in unread_xml_urls]
+        print "    %s/%s unread feeds" % (len(unread_feeds), len(all_feeds_obj))
+        return unread_feeds
 
-    def parse_feed(self, feed):
+    def parse_feed(self, feed_obj):
 
-        feed_title = feed.get("text")
-        feed_xml_url = feed.get("xmlurl")
-        feed_html_url = feed.get("htmlurl")
+        feed_title = feed_obj.get("text")
+        feed_xml_url = feed_obj.get("xmlurl")
+        feed_html_url = feed_obj.get("htmlurl")
         google_url, feed_quote_url = feed_html_url.split("/view/")
         unread_param = "n=1000&xt=user/-/state/com.google/read"
         feed_url = "%s/%s/%s?%s" % (google_url.replace("http", "https"),
                                     "atom",
                                     feed_quote_url,
                                     unread_param)
-        return (feed_title, feed_url, feed_xml_url)
-
-    def has_unread(self, feed_xml_url):
-        unread_feed_list = self.unread_parser().xpath("//string")
-        for feed in unread_feed_list:
-            if feed_xml_url in feed.text:
-                return True
-        return False
-
-    def fetch_articles(self):
+        return Feed(title=feed_title,
+                    html_url=feed_url,
+                    xml_url=feed_xml_url)
+    def fetch_feeds(self):
         """
         Articles may be ill formed html, such us contain "<>"
         Use BS
         """
-        self.feed_url_list = self.parse_feeds(self.feed_list_url)
+        self.unread_feeds = self.parsing_feeds(self.feed_list_url)
         print "> Fetching Articles..."
-        feed_content_list = [self.fetch_article(tit, html, xml) for tit, html, xml in self.feed_url_list]
-        return feed_content_list
+        for feed in self.unread_feeds:
+            self.fetch_article(feed)
 
-    def fetch_article(self, feed_title, feed_html_url, feed_xml_url):
-        soup = BS(self.get_resp(feed_html_url),
+    def fetch_article(self, feed):
+        soup = BS(self.get_resp(feed.html_url),
                   convertEntities="html")
-
-        entries = soup.findAll("entry")
-
-        article_sum = len(entries)
-        print "    Fetch %2d articles from %s" % (article_sum, feed_title)
-        article_list = [(entries[i].title, entries[i].content or entries[i].summary) for i in range(article_sum)]
-        self.list_to_mark.append(feed_xml_url)
-        return (feed_title, article_list)
+        art_objects = soup.findAll("entry")
+        article_amount = len(art_objects)
+        print "    Fetch %2d articles from %s" % (article_amount, feed.title)
+        feed.articles = [Article(title=art_objects[i].title.string,
+                                 desc=art_objects[i].content or art_objects[i].summary)
+                         for i in range(article_amount)]
 
     def mark_all_as_read(self):
         self.token = self.get_resp("http://www.google.com/reader/api/0/token")
         print "> Mark items as read..."
-        for feed_xml_url in self.list_to_mark:
-            self.mark_all_as_read_for_feed(feed_xml_url)
+        for feed in self.unread_feeds:
+            self.mark_all_as_read_for_feed(feed.xml_url)
 
     def mark_all_as_read_for_feed(self, feed_xml_url):
         req_url = "https://www.google.com/reader/api/0/mark-all-as-read"

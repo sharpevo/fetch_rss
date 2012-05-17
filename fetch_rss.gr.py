@@ -26,10 +26,11 @@ from md5 import new as md5
 
 sys.path.append("/home/ryan/local/scripts/python")
 import internet_util, image_util
-from GoogleReader import GoogleReader
+from GoogleReader import GoogleReader#, Feed, Article
+import curses
 def main():
 
-    print "\n***** Fetch Rss from Google Reader *****\n"
+    pretty_print("Fetch RSS from Google Reader")
 
     base_folder = "/home/ryan/local/scripts/kindle/fetch_rss/output"
     timestamp = time.strftime("%Y.%m.%d %H:%M")
@@ -46,7 +47,7 @@ def main():
 
     article_amount = gr.get_amount()
     if not article_amount:
-        output_rst("> No new items.")
+        print "> No new items."
         return
 
     input_char = ""
@@ -55,10 +56,11 @@ def main():
         if input_char == "y":
             break
         elif input_char == "n":
-            output_rst("> Abort to fetching articles.")
+            pretty_print("Abort to fetching articles")
             return
 
-    feed_content_list = gr.fetch_articles()
+    gr.fetch_feeds()
+
     file_name = "Featured Articles (%s)" % article_amount
     file_folder = os.path.join(base_folder, file_name)
     # create a folder to storage images.
@@ -68,8 +70,8 @@ def main():
         pass
 
     # trans article_sum to mark the progress with left count
-    html, outline = gen_html(feed_content_list, article_amount)
-    make_nav_aid(file_folder, outline)
+    html = gen_html(gr.unread_feeds, article_amount)
+    make_nav_aid(file_folder, gr.unread_feeds)
     html_with_images = internet_util.fetch_images(html, file_folder, timeout=5.0)
 
     # output files
@@ -88,10 +90,17 @@ def main():
     opf_file = "%s.opf" % file_folder
     Popen(("kindlegen", opf_file), stdout=PIPE, stderr=PIPE)
 
-    output_rst("Finished!")
+    pretty_print("Success")
 
-def output_rst(text):
-    print "****************************************\n%s" % text
+def pretty_print(text):
+    symbol = "*"
+    curses.setupterm()
+    length = curses.tigetnum("cols")
+    sep = (length - len(text) - 2) / 2
+    layout_temp = "\n%(sep)s %(text)s %(sep)s\n"
+    layout = layout_temp % dict(sep="*"*sep,
+                                text=text)
+    print layout
 
 #######################################################################################
 # opf file template.
@@ -174,7 +183,7 @@ NAV_ART = '''
 </navPoint>
 '''
 
-def make_nav_aid(file_folder, outline):
+def make_nav_aid(file_folder, unread_feeds):
 
     file_name = file_folder.rpartition("/")[2]
     uid = md5(file_name).hexdigest()
@@ -193,27 +202,20 @@ def make_nav_aid(file_folder, outline):
     # ncx
 
     nav_secs = []
-    feed_count = 0
-    for feed_title, feed_article_titles in outline:
-        feed_count += 1
-
-        art_count = 0
-        nav_arts = []
-        for article in feed_article_titles:
-            art_count += 1
-            nav_arts.append(NAV_ART % dict(sec_count=feed_count,
-                                           art_count=art_count,
-                                           title=article,
-                                           html=html_rel_path))
+    for feed_count, feed in enumerate(unread_feeds):
+        nav_arts = [NAV_ART % dict(sec_count=feed_count,
+                                   art_count=article_count,
+                                   title=article.title,
+                                   html=html_rel_path)
+                    for article_count, article in enumerate(feed.articles)]
         nav_secs.append(NAV_SEC % dict(sec_count=feed_count,
-                                       title=feed_title,
+                                       title=feed.title,
                                        html=html_rel_path,
                                        nav_arts="".join(nav_arts)))
     ncx = NCX % dict(uid=uid,
                      title=file_name,
                      html=html_rel_path,
                      nav_secs="".join(nav_secs))
-
     ncx_abs_path = "%s.ncx" % file_folder
     output(ncx_abs_path, ncx)
 
@@ -304,77 +306,48 @@ TOC_ART = '''
 </li>
 '''
 
-def gen_html(feed_content_list, article_amount):
+def gen_html(unread_feeds, article_amount):
+    return HTML % dict(cover=COVER,
+                       toc=make_toc(unread_feeds),
+                       contents=make_contents(unread_feeds, article_amount))
 
-    contents, outline = make_contents(feed_content_list, article_amount)
-    toc = make_toc(outline)
-    html = make_html(COVER, toc, contents)
-    return (html, outline)
-
-def make_html(cover, toc, contents):
-
-    html = HTML % dict(cover=cover,
-                       toc=toc,
-                       contents=contents)
-    return html
-
-def make_contents(feed_content_list, article_amount):
-    toc = ""
-    contents = ""
-    cover = ""
-    outline = []
-
-    feed_count = 0
+def make_contents(unread_feeds, article_amount):
     sections = []
-    cur_art_count = 0
-    for feed_title, feed_article_list in feed_content_list:
-        feed_count += 1
-
+    article_count = 0 # compute left articles
+    for feed_count, feed in enumerate(unread_feeds):
         articles = []
-        article_count = 0
-        feed_article_titles = []
-        for art_title, art_desc in feed_article_list:
-            article_count += 1
-            left = article_amount - cur_art_count - article_count
-            title = "%s&lt; %s" % (left, art_title.string)
-            if art_desc:
-                content = "".join(art_desc)
+        for feed_article_count, article in enumerate(feed.articles):
+            left = article_amount - article_count - feed_article_count
+            title = "%s&lt; %s" % (left, article.title)
+            if article.desc:
+                content = "".join(article.desc)
             else:
                 # if art has no content or summary
                 content = ""
             articles.append(ARTICLE % dict(sec_count=feed_count,
-                                                art_count=article_count,
-                                                title=title,
-                                                contents=content))
-            feed_article_titles.append(title)
-        cur_art_count += article_count
+                                           art_count=feed_article_count,
+                                           title=title,
+                                           contents=content))
+        article_count += len(feed.articles)
         sections.append(SECTION % dict(count=feed_count,
-                                            articles="".join(articles)))
-        outline.append((feed_title,feed_article_titles))
-    contents = CONTENT % dict(sections="".join(sections))
+                                       articles="".join(articles)))
+    return CONTENT % dict(sections="".join(sections))
 
-    return (contents, outline)
-
-def make_toc(outline):
+def make_toc(unread_feeds):
 
     toc_feed = []
     toc_sec = []
-    feed_count = 0
-    for feed_title, feed_article_titles in outline:
-        feed_count += 1
-        art_count = len(feed_article_titles)
+    for feed_count, feed in enumerate(unread_feeds):
+        feed_article_amount = len(feed.articles)
         toc_feed.append(TOC_FEED % dict(sec_count=feed_count,
-                                        title=feed_title,
-                                        art_count=art_count))
-        toc_art = []
-        art_count = 0
-        for article in feed_article_titles:
-            art_count += 1
-            toc_art.append(TOC_ART % dict(sec_count=feed_count,
-                                          art_count=art_count,
-                                          title=article))
+                                        title=feed.title,
+                                        art_count=feed_article_amount))
+        toc_art = [TOC_ART % dict(sec_count=feed_count,
+                                  art_count=article_count,
+                                  title=article.title)
+                   for article_count, article in enumerate(feed.articles)]
         toc_sec.append(TOC_SEC % dict(count=feed_count,
-                                      title=feed_title,
+                                      title=feed.title,
                                       articles="".join(toc_art)))
     toc = TOC % dict(toc_feeds="".join(toc_feed),
                      toc_secs="".join(toc_sec))
