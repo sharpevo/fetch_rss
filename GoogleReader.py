@@ -162,6 +162,10 @@ class GoogleReader():
             self.fetch_article(feed)
 
     def fetch_article(self, feed):
+
+        # keep content in code and pre as original one, avoid adding space after span.
+        BS.QUOTE_TAGS = {"pre":None, "code":None}
+
         soup = BS(self.get_resp(feed.html_url),
                   convertEntities="html")
         art_objects = soup.findAll("entry")
