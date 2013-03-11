@@ -1,0 +1,6 @@
+[submodule "lib/python"]
+	path = lib/python
+	url = file:///home/ryan/local/scripts/python/
+[submodule "lib/kindle_format"]
+	path = lib/kindle_format
+	url = file:///home/ryan/local/scripts/kindle/kindle_format/
